@@ -13,7 +13,7 @@ import (
 
 	"image/draw"
 	_ "image/jpeg"
-	_ "image/png"
+	"image/png"
 )
 
 func main() {
@@ -30,6 +30,11 @@ func main() {
 	c = p.AddCommand("encode-image", "compute the hash of an image file",
 		cmdEncodeImage)
 	c.AddArgument("path", "the path of the image to encode")
+
+	c = p.AddCommand("decode-image", "decode an image from a hash",
+		cmdDecodeImage)
+	c.AddArgument("path", "the path of the image to encode")
+	c.AddArgument("hash", "the base64-encoded hash")
 
 	p.ParseCommandLine()
 	p.Run()
@@ -74,6 +79,25 @@ func cmdEncodeImage(p *program.Program) {
 	fmt.Println(base64.StdEncoding.EncodeToString(hash))
 }
 
+func cmdDecodeImage(p *program.Program) {
+	filePath := p.ArgumentValue("path")
+	hashString := p.ArgumentValue("hash")
+
+	hash, err := base64.StdEncoding.DecodeString(hashString)
+	if err != nil {
+		p.Fatal("cannot decode base64-encoded hash: %v", err)
+	}
+
+	img, err := thumbhash.Decode(hash)
+	if err != nil {
+		p.Fatal("cannot decode image: %v", err)
+	}
+
+	if err := writeImage(img, filePath); err != nil {
+		p.Fatal("cannot encode image: %v", err)
+	}
+}
+
 func readImage(filePath string) (image.Image, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -87,4 +111,19 @@ func readImage(filePath string) (image.Image, error) {
 	}
 
 	return img, nil
+}
+
+func writeImage(img image.Image, filePath string) error {
+	flags := os.O_CREATE | os.O_TRUNC | os.O_WRONLY
+	file, err := os.OpenFile(filePath, flags, 0644)
+	if err != nil {
+		return fmt.Errorf("cannot open file: %w", err)
+	}
+	defer file.Close()
+
+	if err := png.Encode(file, img); err != nil {
+		return fmt.Errorf("cannot encode file: %w", err)
+	}
+
+	return nil
 }

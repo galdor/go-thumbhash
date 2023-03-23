@@ -1,10 +1,14 @@
 package thumbhash
 
 import (
+	"errors"
 	"image"
-	"image/color"
 	"image/draw"
 	"math"
+)
+
+var (
+	ErrInvalidHash = errors.New("invalid hash")
 )
 
 type Hash = []byte
@@ -216,9 +220,224 @@ func Encode(img image.Image) Hash {
 	return hash
 }
 
-func Decode(Hash) (image.Image, error) {
-	// TODO
-	return nil, nil
+func Decode(hash Hash) (image.Image, error) {
+	// Read the content of the hash
+	if len(hash) < 5 {
+		return nil, ErrInvalidHash
+	}
+
+	header24 := int(hash[0]) | int(hash[1])<<8 | int(hash[2])<<16
+
+	lDC := float64(header24&63) / 63.0
+	pDC := float64((header24>>6)&63)/31.5 - 1.0
+	qDC := float64((header24>>12)&63)/31.5 - 1.0
+	lScale := float64((header24>>18)&31) / 31.0
+	hasAlphaBit := header24 >> 23
+	hasAlpha := hasAlphaBit == 1
+
+	header16 := int(hash[3]) | int(hash[4])<<8
+
+	pScale := float64((header16>>3)&63) / 63.0
+	qScale := float64((header16>>9)&63) / 63.0
+
+	isLandscapeBit := header16 >> 15
+	isLandscape := isLandscapeBit == 1
+
+	var lx, ly int
+	if isLandscape {
+		if hasAlpha {
+			lx = 5
+		} else {
+			lx = 7
+		}
+		ly = imax(3, int(header16&7))
+	} else {
+		lx = imax(3, int(header16&7))
+		if hasAlpha {
+			ly = 5
+		} else {
+			ly = 7
+		}
+	}
+
+	aDC := 1.0
+	aScale := 0.0
+	if hasAlpha {
+		if len(hash) < 6 {
+			return nil, ErrInvalidHash
+		}
+
+		aDC = float64(hash[5]&15) / 15.0
+		aScale = float64(hash[5]>>4) / 15.0
+	}
+
+	start := 5
+	if hasAlpha {
+		start = 6
+	}
+
+	idx := 0
+
+	var err error
+	decodeChannel := func(nx, ny int, scale float64) (ac []float64) {
+		for cy := 0; cy < ny; cy++ {
+			var cx int
+			if cy == 0 {
+				cx = 1
+			}
+
+			for ; cx*ny < nx*(ny-cy); cx++ {
+				hidx := start + (idx / 2)
+				if hidx >= len(hash) {
+					err = ErrInvalidHash
+					return nil
+				}
+
+				f := (float64((hash[hidx]>>((idx&1)*4))&15)/7.5 - 1.0) * scale
+				ac = append(ac, f)
+				idx++
+			}
+		}
+
+		return
+	}
+
+	// Note the multiplication by a constant factor to increase saturation
+	// since quantization tend to produce dull images.
+	lAC := decodeChannel(lx, ly, lScale)
+	pAC := decodeChannel(3, 3, pScale*1.25)
+	qAC := decodeChannel(3, 3, qScale*1.25)
+
+	var aAC []float64
+	if hasAlpha {
+		aAC = decodeChannel(5, 5, aScale)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Prepare the image
+	ratio := float64(lx) / float64(ly)
+
+	var w, h int
+	if ratio > 1.0 {
+		w = 32
+		h = iround(32.0 / ratio)
+	} else {
+		w = iround(32.0 * ratio)
+		h = 32
+	}
+
+	wf := float64(w)
+	hf := float64(h)
+
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	data := img.Pix
+
+	// Decode RGBA data
+	idx = 0
+
+	for y := 0; y < h; y++ {
+		yf := float64(y)
+
+		for x := 0; x < w; x++ {
+			xf := float64(x)
+
+			l := lDC
+			p := pDC
+			q := qDC
+			a := aDC
+
+			// Precompute coefficients
+			n := 3
+			if hasAlpha {
+				n = 5
+			}
+			n = imax(lx, n)
+
+			fx := make([]float64, n)
+			for cx := 0; cx < n; cx++ {
+				fx[cx] = math.Cos(math.Pi / wf * (xf + 0.5) * float64(cx))
+			}
+
+			n = 3
+			if hasAlpha {
+				n = 5
+			}
+			n = imax(ly, n)
+
+			fy := make([]float64, n)
+			for cy := 0; cy < n; cy++ {
+				fy[cy] = math.Cos(math.Pi / hf * (yf + 0.5) * float64(cy))
+			}
+
+			// Decode L
+			j := 0
+			for cy := 0; cy < ly; cy++ {
+				cx := 0
+				if cy == 0 {
+					cx = 1
+				}
+
+				fy2 := fy[cy] * 2.0
+				for ; cx*ly < lx*(ly-cy); cx++ {
+					l += lAC[j] * fx[cx] * fy2
+					j++
+				}
+			}
+
+			// Decode P and Q
+			j = 0
+			for cy := 0; cy < 3; cy++ {
+				cx := 0
+				if cy == 0 {
+					cx = 1
+				}
+
+				fy2 := fy[cy] * 2.0
+				for ; cx < 3-cy; cx++ {
+					f := fx[cx] * fy2
+					p += pAC[j] * f
+					q += qAC[j] * f
+					j++
+				}
+			}
+
+			// Decode A
+			if hasAlpha {
+				j = 0
+				for cy := 0; cy < 5; cy++ {
+					cx := 0
+					if cy == 0 {
+						cx = 1
+					}
+
+					fy2 := fy[cy] * 2.0
+					for ; cx < 5-cy; cx++ {
+						a += aAC[j] * fx[cx] * fy2
+						j++
+					}
+				}
+			}
+
+			// Convert to RGBA
+			b := l - 2.0/3.0*p
+			r := (3.0*l - b + q) / 2.0
+			g := r - q
+
+			af := math.Max(0.0, math.Min(1.0, a))
+
+			data[idx] = byte(math.Max(0.0, math.Min(1.0, r)*255.0*af))
+			data[idx+1] = byte(math.Max(0.0, math.Min(1.0, g)*255.0*af))
+			data[idx+2] = byte(math.Max(0.0, math.Min(1.0, b)*255.0*af))
+			data[idx+3] = byte(af * 255.0)
+
+			idx += 4
+		}
+	}
+
+	return img, nil
 }
 
 func iround(x float64) int {
