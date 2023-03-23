@@ -6,11 +6,14 @@ import (
 	"math"
 )
 
+// DecodingCfg contains the parameters used for image decoding. Decoding will
+// use default values for uninitialized members.
 type DecodingCfg struct {
-	BaseSize        int
-	SaturationBoost float64
+	BaseSize        int     // the base image size (default: 32px)
+	SaturationBoost float64 // the factor applied to increase image saturation (default: 1.25)
 }
 
+// EncodeImage returns the binary hash of an image.
 func EncodeImage(img image.Image) []byte {
 	// Extract image data
 	bounds := img.Bounds()
@@ -158,10 +161,13 @@ func EncodeImage(img image.Image) []byte {
 	return hash.Encode()
 }
 
+// DecodeImage returns the image associated with a binary hash using the
+// default decoding configuration.
 func DecodeImage(hashData []byte) (image.Image, error) {
 	return DecodeImageWithCfg(hashData, DecodingCfg{})
 }
 
+// DecodeImageWithCfg returns the image associated with a binary hash.
 func DecodeImageWithCfg(hashData []byte, cfg DecodingCfg) (image.Image, error) {
 	// Configuration default values
 	if cfg.BaseSize == 0 {

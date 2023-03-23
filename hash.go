@@ -33,6 +33,7 @@ var (
 // If HasAlpha:
 // A AC:        4 bit each
 
+// Hash represents the set of data stored in an image hash.
 type Hash struct {
 	LDC      float64
 	PDC      float64
@@ -56,6 +57,7 @@ type Hash struct {
 	AAC []float64 // if HasAlpha
 }
 
+// Encode returns the binary representation of a hash.
 func (h *Hash) Encode() []byte {
 	// Compute the size of the hash
 	nbAC := len(h.LAC) + len(h.PAC) + len(h.QAC)
@@ -129,6 +131,7 @@ func (h *Hash) Encode() []byte {
 	return hash
 }
 
+// Decode extract data from the binary representation of a hash.
 func (h *Hash) Decode(data []byte, cfg *DecodingCfg) error {
 	if len(data) < 5 {
 		return ErrInvalidHash
@@ -225,6 +228,8 @@ func (h *Hash) Decode(data []byte, cfg *DecodingCfg) error {
 	return err
 }
 
+// Size return the width and height of the image associated with a hash
+// according to a specific base size.
 func (hash *Hash) Size(baseSize int) (w int, h int) {
 	ratio := float64(hash.Lx) / float64(hash.Ly)
 
