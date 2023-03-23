@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"image"
 	"io/ioutil"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/exograd/go-program"
 	"github.com/galdor/go-thumbhash"
@@ -35,6 +37,7 @@ func main() {
 		cmdDecodeImage)
 	c.AddArgument("path", "the path of the image to encode")
 	c.AddArgument("hash", "the base64-encoded hash")
+	c.AddOption("s", "size", "pixels", "", "the base size of the decode image")
 
 	p.ParseCommandLine()
 	p.Run()
@@ -88,7 +91,20 @@ func cmdDecodeImage(p *program.Program) {
 		p.Fatal("cannot decode base64-encoded hash: %v", err)
 	}
 
-	img, err := thumbhash.DecodeImage(hash)
+	var cfg thumbhash.DecodingCfg
+
+	if p.IsOptionSet("size") {
+		sizeString := p.OptionValue("size")
+
+		i64, err := strconv.ParseInt(sizeString, 10, 64)
+		if err != nil || i64 < 1 || i64 > math.MaxInt32 {
+			p.Fatal("invalid image size %q", sizeString)
+		}
+
+		cfg.BaseSize = int(i64)
+	}
+
+	img, err := thumbhash.DecodeImageWithCfg(hash, cfg)
 	if err != nil {
 		p.Fatal("cannot decode image: %v", err)
 	}

@@ -6,6 +6,11 @@ import (
 	"math"
 )
 
+type DecodingCfg struct {
+	BaseSize        int
+	SaturationBoost float64
+}
+
 func EncodeImage(img image.Image) []byte {
 	// Extract image data
 	bounds := img.Bounds()
@@ -154,14 +159,27 @@ func EncodeImage(img image.Image) []byte {
 }
 
 func DecodeImage(hashData []byte) (image.Image, error) {
+	return DecodeImageWithCfg(hashData, DecodingCfg{})
+}
+
+func DecodeImageWithCfg(hashData []byte, cfg DecodingCfg) (image.Image, error) {
+	// Configuration default values
+	if cfg.BaseSize == 0 {
+		cfg.BaseSize = 32
+	}
+
+	if cfg.SaturationBoost == 0.0 {
+		cfg.SaturationBoost = 1.25
+	}
+
 	// Read the content of the hash
 	var hash Hash
-	if err := hash.Decode(hashData); err != nil {
+	if err := hash.Decode(hashData, &cfg); err != nil {
 		return nil, err
 	}
 
 	// Prepare the image
-	w, h := hash.Size()
+	w, h := hash.Size(cfg.BaseSize)
 
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	data := img.Pix
@@ -171,7 +189,7 @@ func DecodeImage(hashData []byte) (image.Image, error) {
 
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
-			fx, fy := hash.Coefficients(x, y)
+			fx, fy := hash.coefficients(x, y, w, h)
 
 			// Decode L
 			l := hash.LDC

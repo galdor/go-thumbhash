@@ -129,7 +129,7 @@ func (h *Hash) Encode() []byte {
 	return hash
 }
 
-func (h *Hash) Decode(data []byte) error {
+func (h *Hash) Decode(data []byte, cfg *DecodingCfg) error {
 	if len(data) < 5 {
 		return ErrInvalidHash
 	}
@@ -215,8 +215,8 @@ func (h *Hash) Decode(data []byte) error {
 	// Note the multiplication by a constant factor to increase saturation
 	// since quantization tend to produce dull images.
 	h.LAC = decodeChannel(h.Lx, h.Ly, h.LScale)
-	h.PAC = decodeChannel(3, 3, h.PScale*1.25)
-	h.QAC = decodeChannel(3, 3, h.QScale*1.25)
+	h.PAC = decodeChannel(3, 3, h.PScale*cfg.SaturationBoost)
+	h.QAC = decodeChannel(3, 3, h.QScale*cfg.SaturationBoost)
 
 	if h.HasAlpha {
 		h.AAC = decodeChannel(5, 5, h.AScale)
@@ -225,25 +225,24 @@ func (h *Hash) Decode(data []byte) error {
 	return err
 }
 
-func (hash *Hash) Size() (w int, h int) {
+func (hash *Hash) Size(baseSize int) (w int, h int) {
 	ratio := float64(hash.Lx) / float64(hash.Ly)
 
 	if ratio > 1.0 {
-		w = 32
-		h = iround(32.0 / ratio)
+		w = baseSize
+		h = iround(float64(baseSize) / ratio)
 	} else {
-		w = iround(32.0 * ratio)
-		h = 32
+		w = iround(float64(baseSize) * ratio)
+		h = baseSize
 	}
 
 	return
 }
 
-func (hash *Hash) Coefficients(x, y int) (fx []float64, fy []float64) {
+func (hash *Hash) coefficients(x, y, w, h int) (fx []float64, fy []float64) {
 	xf := float64(x)
 	yf := float64(y)
 
-	w, h := hash.Size()
 	wf, hf := float64(w), float64(h)
 
 	n := 3

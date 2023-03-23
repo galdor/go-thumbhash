@@ -16,10 +16,9 @@ Evan Wallace's library) to generate a placeholder image from the hash. Then
 load the original image asynchronously.
 
 ## Usage
-The main API is made of two functions:
-
-- `thumbhash.EncodeImage` calculates the hash of an image.
-- `thumbhash.DecodeImage` creates the image represented by a hash.
+Refer to the [Go package
+documentation](https://pkg.go.dev/github.com/galdor/go-thumbhash) for
+information about the API.
 
 See the [`thumbhash` program](cmd/thumbhash/main.go) for a practical use case.
 
