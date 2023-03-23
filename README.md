@@ -15,6 +15,8 @@ and send it in the HTML document. On the client side, use Javascript (e.g.
 Evan Wallace's library) to generate a placeholder image from the hash. Then
 load the original image asynchronously.
 
+![Thumbhash diagram](misc/diagram.png)
+
 ## Usage
 Refer to the [Go package
 documentation](https://pkg.go.dev/github.com/galdor/go-thumbhash) for
