@@ -74,7 +74,7 @@ func cmdEncodeImage(p *program.Program) {
 		p.Fatal("cannot read image from %q: %v", filePath, err)
 	}
 
-	hash := thumbhash.Encode(img)
+	hash := thumbhash.EncodeImage(img)
 
 	fmt.Println(base64.StdEncoding.EncodeToString(hash))
 }
@@ -88,7 +88,7 @@ func cmdDecodeImage(p *program.Program) {
 		p.Fatal("cannot decode base64-encoded hash: %v", err)
 	}
 
-	img, err := thumbhash.Decode(hash)
+	img, err := thumbhash.DecodeImage(hash)
 	if err != nil {
 		p.Fatal("cannot decode image: %v", err)
 	}

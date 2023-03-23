@@ -1,42 +1,12 @@
 package thumbhash
 
 import (
-	"errors"
 	"image"
 	"image/draw"
 	"math"
 )
 
-var (
-	ErrInvalidHash = errors.New("invalid hash")
-)
-
-type Hash = []byte
-
-// Hash binary representation:
-//
-// L DC:        6 bit
-// P DC:        6 bit
-// L scale:     5 bit
-// HasAlpha:    1 bit
-//
-// L count:     3 bit
-// P scale:     6 bit
-// Q scale:     6 bit
-// IsLandscape: 1 bit
-//
-// If HasAlpha:
-// A DC:        4 bit
-// A scale:     4 bit
-//
-// L AC:        4 bit each
-// P AC:        4 bit each
-// Q AC:        4 bit each
-//
-// If HasAlpha:
-// A AC:        4 bit each
-
-func Encode(img image.Image) Hash {
+func EncodeImage(img image.Image) []byte {
 	// Extract image data
 	bounds := img.Bounds()
 	rgba := image.NewRGBA(bounds)
@@ -157,237 +127,73 @@ func Encode(img image.Image) Hash {
 	}
 
 	// Create the hash
-	nbAC := len(lAC) + len(pAC) + len(qAC)
-	if hasAlpha {
-		nbAC += len(aAC)
-	}
-	hashSize := 3 + 2 + (nbAC+1)/2
-	if hasAlpha {
-		hashSize += 1
-	}
+	hash := Hash{
+		LDC:      lDC,
+		PDC:      pDC,
+		QDC:      qDC,
+		LScale:   lScale,
+		HasAlpha: hasAlpha,
 
-	hash := make(Hash, hashSize)
+		Lx:          lx,
+		Ly:          ly,
+		PScale:      pScale,
+		QScale:      qScale,
+		IsLandscape: isLandscape == 1,
 
-	header24 := iround(63.0 * lDC)
-	header24 |= iround(31.5+31.5*pDC) << 6
-	header24 |= iround(31.5+31.5*qDC) << 12
-	header24 |= iround(31.0*lScale) << 18
-	if hasAlpha {
-		header24 |= 1 << 23
-	}
+		ADC:    aDC,
+		AScale: aScale,
 
-	hash[0] = byte(header24)
-	hash[1] = byte(header24 >> 8)
-	hash[2] = byte(header24 >> 16)
+		LAC: lAC,
+		PAC: pAC,
+		QAC: qAC,
 
-	header16 := lx
-	if isLandscape == 1 {
-		header16 = ly
-	}
-	header16 |= iround(63.0*pScale) << 3
-	header16 |= iround(63.0*qScale) << 9
-	header16 |= isLandscape << 15
-
-	hash[3] = byte(header16)
-	hash[4] = byte(header16 >> 8)
-
-	if hasAlpha {
-		hash[5] = byte(iround(15.0*aDC) | iround(15.0*aScale)<<4)
+		AAC: aAC,
 	}
 
-	acs := [][]float64{lAC, pAC, qAC}
-	if hasAlpha {
-		acs = append(acs, aAC)
-	}
-
-	start := 5
-	if hasAlpha {
-		start = 6
-	}
-
-	idx := 0
-
-	for i := 0; i < len(acs); i++ {
-		ac := acs[i]
-		for j := 0; j < len(ac); j++ {
-			f := ac[j]
-
-			hash[start+(idx/2)] |= byte(iround(15.0*f) << ((idx & 1) * 4))
-			idx += 1
-		}
-	}
-
-	return hash
+	return hash.Encode()
 }
 
-func Decode(hash Hash) (image.Image, error) {
+func DecodeImage(hashData []byte) (image.Image, error) {
 	// Read the content of the hash
-	if len(hash) < 5 {
-		return nil, ErrInvalidHash
-	}
-
-	header24 := int(hash[0]) | int(hash[1])<<8 | int(hash[2])<<16
-
-	lDC := float64(header24&63) / 63.0
-	pDC := float64((header24>>6)&63)/31.5 - 1.0
-	qDC := float64((header24>>12)&63)/31.5 - 1.0
-	lScale := float64((header24>>18)&31) / 31.0
-	hasAlphaBit := header24 >> 23
-	hasAlpha := hasAlphaBit == 1
-
-	header16 := int(hash[3]) | int(hash[4])<<8
-
-	pScale := float64((header16>>3)&63) / 63.0
-	qScale := float64((header16>>9)&63) / 63.0
-
-	isLandscapeBit := header16 >> 15
-	isLandscape := isLandscapeBit == 1
-
-	var lx, ly int
-	if isLandscape {
-		if hasAlpha {
-			lx = 5
-		} else {
-			lx = 7
-		}
-		ly = imax(3, int(header16&7))
-	} else {
-		lx = imax(3, int(header16&7))
-		if hasAlpha {
-			ly = 5
-		} else {
-			ly = 7
-		}
-	}
-
-	aDC := 1.0
-	aScale := 0.0
-	if hasAlpha {
-		if len(hash) < 6 {
-			return nil, ErrInvalidHash
-		}
-
-		aDC = float64(hash[5]&15) / 15.0
-		aScale = float64(hash[5]>>4) / 15.0
-	}
-
-	start := 5
-	if hasAlpha {
-		start = 6
-	}
-
-	idx := 0
-
-	var err error
-	decodeChannel := func(nx, ny int, scale float64) (ac []float64) {
-		for cy := 0; cy < ny; cy++ {
-			var cx int
-			if cy == 0 {
-				cx = 1
-			}
-
-			for ; cx*ny < nx*(ny-cy); cx++ {
-				hidx := start + (idx / 2)
-				if hidx >= len(hash) {
-					err = ErrInvalidHash
-					return nil
-				}
-
-				f := (float64((hash[hidx]>>((idx&1)*4))&15)/7.5 - 1.0) * scale
-				ac = append(ac, f)
-				idx++
-			}
-		}
-
-		return
-	}
-
-	// Note the multiplication by a constant factor to increase saturation
-	// since quantization tend to produce dull images.
-	lAC := decodeChannel(lx, ly, lScale)
-	pAC := decodeChannel(3, 3, pScale*1.25)
-	qAC := decodeChannel(3, 3, qScale*1.25)
-
-	var aAC []float64
-	if hasAlpha {
-		aAC = decodeChannel(5, 5, aScale)
-	}
-
-	if err != nil {
+	var hash Hash
+	if err := hash.Decode(hashData); err != nil {
 		return nil, err
 	}
 
 	// Prepare the image
-	ratio := float64(lx) / float64(ly)
-
-	var w, h int
-	if ratio > 1.0 {
-		w = 32
-		h = iround(32.0 / ratio)
-	} else {
-		w = iround(32.0 * ratio)
-		h = 32
-	}
-
-	wf := float64(w)
-	hf := float64(h)
+	w, h := hash.Size()
 
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	data := img.Pix
 
 	// Decode RGBA data
-	idx = 0
+	idx := 0
 
 	for y := 0; y < h; y++ {
-		yf := float64(y)
-
 		for x := 0; x < w; x++ {
-			xf := float64(x)
-
-			l := lDC
-			p := pDC
-			q := qDC
-			a := aDC
-
-			// Precompute coefficients
-			n := 3
-			if hasAlpha {
-				n = 5
-			}
-			n = imax(lx, n)
-
-			fx := make([]float64, n)
-			for cx := 0; cx < n; cx++ {
-				fx[cx] = math.Cos(math.Pi / wf * (xf + 0.5) * float64(cx))
-			}
-
-			n = 3
-			if hasAlpha {
-				n = 5
-			}
-			n = imax(ly, n)
-
-			fy := make([]float64, n)
-			for cy := 0; cy < n; cy++ {
-				fy[cy] = math.Cos(math.Pi / hf * (yf + 0.5) * float64(cy))
-			}
+			fx, fy := hash.Coefficients(x, y)
 
 			// Decode L
+			l := hash.LDC
+
 			j := 0
-			for cy := 0; cy < ly; cy++ {
+			for cy := 0; cy < hash.Ly; cy++ {
 				cx := 0
 				if cy == 0 {
 					cx = 1
 				}
 
 				fy2 := fy[cy] * 2.0
-				for ; cx*ly < lx*(ly-cy); cx++ {
-					l += lAC[j] * fx[cx] * fy2
+				for ; cx*hash.Ly < hash.Lx*(hash.Ly-cy); cx++ {
+					l += hash.LAC[j] * fx[cx] * fy2
 					j++
 				}
 			}
 
 			// Decode P and Q
+			p := hash.PDC
+			q := hash.QDC
+
 			j = 0
 			for cy := 0; cy < 3; cy++ {
 				cx := 0
@@ -398,14 +204,16 @@ func Decode(hash Hash) (image.Image, error) {
 				fy2 := fy[cy] * 2.0
 				for ; cx < 3-cy; cx++ {
 					f := fx[cx] * fy2
-					p += pAC[j] * f
-					q += qAC[j] * f
+					p += hash.PAC[j] * f
+					q += hash.QAC[j] * f
 					j++
 				}
 			}
 
 			// Decode A
-			if hasAlpha {
+			a := hash.ADC
+
+			if hash.HasAlpha {
 				j = 0
 				for cy := 0; cy < 5; cy++ {
 					cx := 0
@@ -415,7 +223,7 @@ func Decode(hash Hash) (image.Image, error) {
 
 					fy2 := fy[cy] * 2.0
 					for ; cx < 5-cy; cx++ {
-						a += aAC[j] * fx[cx] * fy2
+						a += hash.AAC[j] * fx[cx] * fy2
 						j++
 					}
 				}
