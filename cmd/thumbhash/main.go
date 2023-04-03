@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/exograd/go-program"
+	"github.com/galdor/go-program"
 	"github.com/galdor/go-thumbhash"
 
 	"image/draw"
