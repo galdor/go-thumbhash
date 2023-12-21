@@ -4,7 +4,16 @@ import (
 	"image"
 	"image/draw"
 	"math"
+	"sync"
+
+	xdraw "golang.org/x/image/draw"
 )
+
+const maxEncodeDim = 128
+
+var rgbaPool = sync.Pool{
+	New: func() any { return image.NewRGBA(image.Rect(0, 0, maxEncodeDim, maxEncodeDim)) },
+}
 
 // DecodingCfg contains the parameters used for image decoding. Decoding will
 // use default values for uninitialized members.
@@ -15,13 +24,29 @@ type DecodingCfg struct {
 
 // EncodeImage returns the binary hash of an image.
 func EncodeImage(img image.Image) []byte {
-	// Extract image data
 	bounds := img.Bounds()
 	w, h := bounds.Dx(), bounds.Dy()
 
-	dstBounds := image.Rect(0, 0, w, h)
-	rgba := image.NewRGBA(dstBounds)
-	draw.Draw(rgba, dstBounds, img, bounds.Min, draw.Src)
+	// get buffer to draw onto
+	rgba := rgbaPool.Get().(*image.RGBA)
+	defer rgbaPool.Put(rgba)
+
+	// resize images larger than max encoding dimension
+	// (no point in encoding large images)
+	if maxDim := imax(w, h); maxDim > maxEncodeDim {
+		var scaleFactor float64
+		if w > h {
+			scaleFactor = maxEncodeDim / float64(w)
+		} else {
+			scaleFactor = maxEncodeDim / float64(h)
+		}
+
+		w = int(float64(w) * scaleFactor)
+		h = int(float64(h) * scaleFactor)
+		xdraw.NearestNeighbor.Scale(rgba, image.Rect(0, 0, w, h), img, bounds, draw.Src, nil)
+	} else {
+		draw.Draw(rgba, image.Rect(0, 0, w, h), img, bounds.Min, draw.Src)
+	}
 
 	// Compute the average value of each color channel
 	var avgR, avgG, avgB, avgA float64
