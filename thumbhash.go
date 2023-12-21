@@ -17,28 +17,24 @@ type DecodingCfg struct {
 func EncodeImage(img image.Image) []byte {
 	// Extract image data
 	bounds := img.Bounds()
-	rgba := image.NewRGBA(bounds)
-	draw.Draw(rgba, bounds, img, bounds.Min, draw.Src)
+	w, h := bounds.Dx(), bounds.Dy()
 
-	w, h := bounds.Max.X, bounds.Max.Y
-	nbPixels := w * h
-	isLandscape := 0
-	if w > h {
-		isLandscape = 1
-	}
-
-	data := rgba.Pix
+	dstBounds := image.Rect(0, 0, w, h)
+	rgba := image.NewRGBA(dstBounds)
+	draw.Draw(rgba, dstBounds, img, bounds.Min, draw.Src)
 
 	// Compute the average value of each color channel
 	var avgR, avgG, avgB, avgA float64
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			i := rgba.PixOffset(x, y)
+			a := float64(rgba.Pix[i+3]) / 255.0
 
-	for i := 0; i < nbPixels; i++ {
-		a := float64(data[i*4+3]) / 255.0
-
-		avgR += a / 255.0 * float64(data[i*4])
-		avgG += a / 255.0 * float64(data[i*4+1])
-		avgB += a / 255.0 * float64(data[i*4+2])
-		avgA += a
+			avgR += a / 255.0 * float64(rgba.Pix[i])
+			avgG += a / 255.0 * float64(rgba.Pix[i+1])
+			avgB += a / 255.0 * float64(rgba.Pix[i+2])
+			avgA += a
+		}
 	}
 
 	if avgA > 0.0 {
@@ -46,6 +42,8 @@ func EncodeImage(img image.Image) []byte {
 		avgG /= avgA
 		avgB /= avgA
 	}
+
+	nbPixels := w * h
 
 	// Convert image data from RGBA to LPQA
 	lChannel := make([]float64, nbPixels) // luminance
@@ -68,17 +66,22 @@ func EncodeImage(img image.Image) []byte {
 	lx := imax(1, iround((lLimit*wf)/maxWH))
 	ly := imax(1, iround((lLimit*hf)/maxWH))
 
-	for i := 0; i < nbPixels; i++ {
-		a := float64(data[i*4+3]) / 255.0
+	pixNum := 0
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			i := rgba.PixOffset(x, y)
+			a := float64(rgba.Pix[i+3]) / 255.0
 
-		r := avgR*(1.0-a) + a/255.0*float64(data[i*4])
-		g := avgG*(1.0-a) + a/255.0*float64(data[i*4+1])
-		b := avgB*(1.0-a) + a/255.0*float64(data[i*4+2])
+			r := avgR*(1.0-a) + a/255.0*float64(rgba.Pix[i])
+			g := avgG*(1.0-a) + a/255.0*float64(rgba.Pix[i+1])
+			b := avgB*(1.0-a) + a/255.0*float64(rgba.Pix[i+2])
 
-		lChannel[i] = (r + g + b) / 3.0
-		pChannel[i] = (r+g)/2.0 - b
-		qChannel[i] = r - g
-		aChannel[i] = a
+			lChannel[pixNum] = (r + g + b) / 3.0
+			pChannel[pixNum] = (r+g)/2.0 - b
+			qChannel[pixNum] = r - g
+			aChannel[pixNum] = a
+			pixNum++
+		}
 	}
 
 	// Encode LPQA data using a DCT
@@ -146,7 +149,7 @@ func EncodeImage(img image.Image) []byte {
 		Ly:          ly,
 		PScale:      pScale,
 		QScale:      qScale,
-		IsLandscape: isLandscape == 1,
+		IsLandscape: w > h,
 
 		ADC:    aDC,
 		AScale: aScale,
