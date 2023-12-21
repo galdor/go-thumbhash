@@ -33,4 +33,5 @@ func TestEncodeImage(t *testing.T) {
 
 	checkImage("1QcSHQRnh493V4dIh4eXh1h4kJUI", "data/sunrise.jpg")
 	checkImage("X5qGNQw7oElslqhGWfSE+Q6oJ1h2iHB2Rw==", "data/firefox.png")
+	checkImage("VvYRNQRod313B4h3eHhYiHeAiQUo", "data/large-sunrise.png")
 }
