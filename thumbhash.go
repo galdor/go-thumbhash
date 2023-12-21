@@ -9,10 +9,43 @@ import (
 	xdraw "golang.org/x/image/draw"
 )
 
-const maxEncodeDim = 128
+const (
+	maxEncodeDim    = 128
+	maxEncodePixels = maxEncodeDim * maxEncodeDim
+)
 
-var rgbaPool = sync.Pool{
-	New: func() any { return image.NewRGBA(image.Rect(0, 0, maxEncodeDim, maxEncodeDim)) },
+// sync.Pools of reusable buffers for encoding
+var (
+	rgbaPool = sync.Pool{ // *image.RGBA of maxEncodeDim x maxEncodeDim
+		New: func() any {
+			return image.NewRGBA(image.Rect(0, 0, maxEncodeDim, maxEncodeDim))
+		},
+	}
+
+	lpqaPool = sync.Pool{
+		New: func() any {
+			return &lpqaBuf{
+				L: make([]float64, maxEncodePixels),
+				P: make([]float64, maxEncodePixels),
+				Q: make([]float64, maxEncodePixels),
+				A: make([]float64, maxEncodePixels),
+			}
+		},
+	}
+
+	fxPool = sync.Pool{
+		New: func() any {
+			s := make([]float64, maxEncodeDim)
+			return &s
+		},
+	}
+)
+
+type lpqaBuf struct {
+	L []float64
+	P []float64
+	Q []float64
+	A []float64
 }
 
 // DecodingCfg contains the parameters used for image decoding. Decoding will
@@ -71,10 +104,8 @@ func EncodeImage(img image.Image) []byte {
 	nbPixels := w * h
 
 	// Convert image data from RGBA to LPQA
-	lChannel := make([]float64, nbPixels) // luminance
-	pChannel := make([]float64, nbPixels) // yellow - blue
-	qChannel := make([]float64, nbPixels) // red - green
-	aChannel := make([]float64, nbPixels) // alpha
+	lpqa := lpqaPool.Get().(*lpqaBuf)
+	defer lpqaPool.Put(lpqa)
 
 	hasAlpha := avgA < float64(nbPixels)
 	var lLimit float64
@@ -101,18 +132,18 @@ func EncodeImage(img image.Image) []byte {
 			g := avgG*(1.0-a) + a/255.0*float64(rgba.Pix[i+1])
 			b := avgB*(1.0-a) + a/255.0*float64(rgba.Pix[i+2])
 
-			lChannel[pixNum] = (r + g + b) / 3.0
-			pChannel[pixNum] = (r+g)/2.0 - b
-			qChannel[pixNum] = r - g
-			aChannel[pixNum] = a
+			lpqa.L[pixNum] = (r + g + b) / 3.0
+			lpqa.P[pixNum] = (r+g)/2.0 - b
+			lpqa.Q[pixNum] = r - g
+			lpqa.A[pixNum] = a
 			pixNum++
 		}
 	}
 
 	// Encode LPQA data using a DCT
+	fx := fxPool.Get().(*[]float64)
+	defer fxPool.Put(fx)
 	encodeChannel := func(channel []float64, nx, ny int) (dc float64, ac []float64, scale float64) {
-		fx := make([]float64, w)
-
 		for cy := 0; cy < ny; cy++ {
 			cyf := float64(cy)
 
@@ -121,14 +152,14 @@ func EncodeImage(img image.Image) []byte {
 				f := 0.0
 
 				for x := 0; x < w; x++ {
-					fx[x] = math.Cos(math.Pi / wf * cxf * (float64(x) + 0.5))
+					(*fx)[x] = math.Cos(math.Pi / wf * cxf * (float64(x) + 0.5))
 				}
 
 				for y := 0; y < h; y++ {
 					fy := math.Cos(math.Pi / hf * cyf * (float64(y) + 0.5))
 
 					for x := 0; x < w; x++ {
-						f += channel[x+y*w] * fx[x] * fy
+						f += channel[x+y*w] * (*fx)[x] * fy
 					}
 				}
 
@@ -152,14 +183,14 @@ func EncodeImage(img image.Image) []byte {
 		return
 	}
 
-	lDC, lAC, lScale := encodeChannel(lChannel, imax(lx, 3), imax(ly, 3))
-	pDC, pAC, pScale := encodeChannel(pChannel, 3, 3)
-	qDC, qAC, qScale := encodeChannel(qChannel, 3, 3)
+	lDC, lAC, lScale := encodeChannel(lpqa.L, imax(lx, 3), imax(ly, 3))
+	pDC, pAC, pScale := encodeChannel(lpqa.P, 3, 3)
+	qDC, qAC, qScale := encodeChannel(lpqa.Q, 3, 3)
 
 	var aDC, aScale float64
 	var aAC []float64
 	if hasAlpha {
-		aDC, aAC, aScale = encodeChannel(aChannel, 5, 5)
+		aDC, aAC, aScale = encodeChannel(lpqa.A, 5, 5)
 	}
 
 	// Create the hash
