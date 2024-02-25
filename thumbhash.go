@@ -66,7 +66,7 @@ func EncodeImage(img image.Image) []byte {
 
 	// resize images larger than max encoding dimension
 	// (no point in encoding large images)
-	if maxDim := imax(w, h); maxDim > maxEncodeDim {
+	if maxDim := max(w, h); maxDim > maxEncodeDim {
 		var scaleFactor float64
 		if w > h {
 			scaleFactor = maxEncodeDim / float64(w)
@@ -95,7 +95,7 @@ func EncodeImage(img image.Image) []byte {
 		}
 	}
 
-	if avgA > 0.0 {
+	if avgA != 0.0 {
 		avgR /= avgA
 		avgG /= avgA
 		avgB /= avgA
@@ -117,10 +117,10 @@ func EncodeImage(img image.Image) []byte {
 
 	wf := float64(w)
 	hf := float64(h)
-	maxWH := math.Max(wf, hf)
+	maxWH := max(wf, hf)
 
-	lx := imax(1, iround((lLimit*wf)/maxWH))
-	ly := imax(1, iround((lLimit*hf)/maxWH))
+	lx := max(1, iround((lLimit*wf)/maxWH))
+	ly := max(1, iround((lLimit*hf)/maxWH))
 
 	pixNum := 0
 	for y := 0; y < h; y++ {
@@ -165,16 +165,16 @@ func EncodeImage(img image.Image) []byte {
 
 				f /= float64(nbPixels)
 
-				if cx > 0 || cy > 0 {
+				if cx != 0 || cy != 0 {
 					ac = append(ac, f)
-					scale = math.Max(scale, math.Abs(f))
+					scale = max(scale, math.Abs(f))
 				} else {
 					dc = f
 				}
 			}
 		}
 
-		if scale > 0.0 {
+		if scale != 0.0 {
 			for i := 0; i < len(ac); i++ {
 				ac[i] = 0.5 + 0.5/scale*ac[i]
 			}
@@ -183,7 +183,7 @@ func EncodeImage(img image.Image) []byte {
 		return
 	}
 
-	lDC, lAC, lScale := encodeChannel(lpqa.L, imax(lx, 3), imax(ly, 3))
+	lDC, lAC, lScale := encodeChannel(lpqa.L, max(lx, 3), max(ly, 3))
 	pDC, pAC, pScale := encodeChannel(lpqa.P, 3, 3)
 	qDC, qAC, qScale := encodeChannel(lpqa.Q, 3, 3)
 
@@ -317,11 +317,11 @@ func DecodeImageWithCfg(hashData []byte, cfg DecodingCfg) (image.Image, error) {
 			r := (3.0*l - b + q) / 2.0
 			g := r - q
 
-			af := math.Max(0.0, math.Min(1.0, a))
+			af := max(0.0, math.Min(1.0, a))
 
-			data[idx] = byte(math.Max(0.0, math.Min(1.0, r)*255.0*af))
-			data[idx+1] = byte(math.Max(0.0, math.Min(1.0, g)*255.0*af))
-			data[idx+2] = byte(math.Max(0.0, math.Min(1.0, b)*255.0*af))
+			data[idx] = byte(max(0.0, math.Min(1.0, r)*255.0*af))
+			data[idx+1] = byte(max(0.0, math.Min(1.0, g)*255.0*af))
+			data[idx+2] = byte(max(0.0, math.Min(1.0, b)*255.0*af))
 			data[idx+3] = byte(af * 255.0)
 
 			idx += 4
@@ -333,12 +333,4 @@ func DecodeImageWithCfg(hashData []byte, cfg DecodingCfg) (image.Image, error) {
 
 func iround(x float64) int {
 	return int(math.Round(x))
-}
-
-func imax(x, y int) int {
-	if x >= y {
-		return x
-	}
-
-	return y
 }

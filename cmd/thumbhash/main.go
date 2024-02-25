@@ -14,8 +14,11 @@ import (
 	"github.com/galdor/go-thumbhash"
 
 	"image/draw"
+	_ "image/gif"
 	_ "image/jpeg"
 	"image/png"
+
+	_ "golang.org/x/image/webp"
 )
 
 func main() {
@@ -29,7 +32,7 @@ func main() {
 	c.AddArgument("path", "the path of the image to decode")
 	c.AddOption("o", "output", "path", "", "the path to write decoded data to")
 
-	c = p.AddCommand("encode-image", "compute the hash of an image file",
+	c = p.AddCommand("encode-image", "compute the base64-encoded hash of an image file",
 		cmdEncodeImage)
 	c.AddArgument("path", "the path of the image to encode")
 
