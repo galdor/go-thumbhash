@@ -14,8 +14,11 @@ import (
 	"github.com/galdor/go-thumbhash"
 
 	"image/draw"
+	_ "image/gif"
 	_ "image/jpeg"
 	"image/png"
+
+	_ "golang.org/x/image/webp"
 )
 
 func main() {
@@ -29,9 +32,9 @@ func main() {
 	c.AddArgument("path", "the path of the image to decode")
 	c.AddOption("o", "output", "path", "", "the path to write decoded data to")
 
-	c = p.AddCommand("encode-image", "compute the hash of an image file",
+	c = p.AddCommand("encode-image", "compute the base64-encoded hash of an image file",
 		cmdEncodeImage)
-	c.AddArgument("path", "the path of the image to encode")
+	c.AddOptionalArgument("path", "the path of the image to encode")
 
 	c = p.AddCommand("decode-image", "decode an image from a hash",
 		cmdDecodeImage)
@@ -43,8 +46,16 @@ func main() {
 	p.Run()
 }
 
+func readFilePath(p *program.Program) (filePath string) {
+	filePath = p.ArgumentValue("path")
+	if filePath == "" {
+		p.Fatal("missing required argument: path")
+	}
+	return
+}
+
 func cmdImageToRawData(p *program.Program) {
-	filePath := p.ArgumentValue("path")
+	filePath := readFilePath(p)
 
 	var outputPath string
 	if output := p.OptionValue("output"); output != "" {
@@ -70,20 +81,26 @@ func cmdImageToRawData(p *program.Program) {
 }
 
 func cmdEncodeImage(p *program.Program) {
-	filePath := p.ArgumentValue("path")
+	var img image.Image
+	var err error
 
-	img, err := readImage(filePath)
-	if err != nil {
-		p.Fatal("cannot read image from %q: %v", filePath, err)
+	if stat, _ := os.Stdin.Stat(); stat.Mode()&os.ModeCharDevice == 0 {
+		if img, err = readFile(os.Stdin); err != nil {
+			p.Fatal("cannot read image from pipe: %v", err)
+		}
+	} else {
+		filePath := readFilePath(p)
+		if img, err = readImage(filePath); err != nil {
+			p.Fatal("cannot read image from %q: %v", filePath, err)
+		}
 	}
 
 	hash := thumbhash.EncodeImage(img)
-
 	fmt.Println(base64.StdEncoding.EncodeToString(hash))
 }
 
 func cmdDecodeImage(p *program.Program) {
-	filePath := p.ArgumentValue("path")
+	filePath := readFilePath(p)
 	hashString := p.ArgumentValue("hash")
 
 	hash, err := base64.StdEncoding.DecodeString(hashString)
@@ -114,19 +131,22 @@ func cmdDecodeImage(p *program.Program) {
 	}
 }
 
-func readImage(filePath string) (image.Image, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("cannot open file: %w", err)
-	}
-	defer file.Close()
-
+func readFile(file *os.File) (image.Image, error) {
 	img, _, err := image.Decode(file)
 	if err != nil {
 		return nil, fmt.Errorf("cannot decode file: %w", err)
 	}
 
 	return img, nil
+}
+
+func readImage(filePath string) (image.Image, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("cannot open file: %w", err)
+	}
+	defer file.Close()
+	return readFile(file)
 }
 
 func writeImage(img image.Image, filePath string) error {

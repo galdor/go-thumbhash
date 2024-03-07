@@ -43,7 +43,6 @@ type Hash struct {
 
 	Lx          int
 	Ly          int
-	LCount      int
 	PScale      float64
 	QScale      float64
 	IsLandscape bool
@@ -85,12 +84,12 @@ func (h *Hash) Encode() []byte {
 	hash[2] = byte(header24 >> 16)
 
 	// Second block (2 bytes)
-	h.LCount = h.Lx
+	lCount := h.Lx
 	if h.IsLandscape {
-		h.LCount = h.Ly
+		lCount = h.Ly
 	}
 
-	header16 := h.LCount
+	header16 := lCount
 	header16 |= iround(63.0*h.PScale) << 3
 	header16 |= iround(63.0*h.QScale) << 9
 	if h.IsLandscape {
@@ -107,23 +106,18 @@ func (h *Hash) Encode() []byte {
 
 	// AC coefficients
 	acs := [][]float64{h.LAC, h.PAC, h.QAC}
-	if h.HasAlpha {
-		acs = append(acs, h.AAC)
-	}
-
 	start := 5
 	if h.HasAlpha {
+		acs = append(acs, h.AAC)
 		start = 6
 	}
 
 	idx := 0
 
-	for i := 0; i < len(acs); i++ {
-		ac := acs[i]
-		for j := 0; j < len(ac); j++ {
-			f := ac[j]
-
-			hash[start+(idx/2)] |= byte(iround(15.0*f) << ((idx & 1) * 4))
+	for _, ac := range acs {
+		for _, f := range ac {
+			// hash[start+(idx/2)] |= byte(iround(15.0*f) << ((idx & 1) * 4))
+			hash[start+(idx>>1)] |= byte(iround(15*f) << ((idx & 1) << 2))
 			idx += 1
 		}
 	}
@@ -153,16 +147,16 @@ func (h *Hash) Decode(data []byte, cfg *DecodingCfg) error {
 	h.QScale = float64((header16>>9)&63) / 63.0
 	h.IsLandscape = (header16 >> 15) != 0
 
-	h.LCount = int(header16 & 7)
+	lCount := int(header16 & 7)
 	if h.IsLandscape {
 		if h.HasAlpha {
 			h.Lx = 5
 		} else {
 			h.Lx = 7
 		}
-		h.Ly = imax(3, h.LCount)
+		h.Ly = max(3, lCount)
 	} else {
-		h.Lx = imax(3, h.LCount)
+		h.Lx = max(3, lCount)
 		if h.HasAlpha {
 			h.Ly = 5
 		} else {
@@ -254,7 +248,7 @@ func (hash *Hash) coefficients(x, y, w, h int) (fx []float64, fy []float64) {
 	if hash.HasAlpha {
 		n = 5
 	}
-	n = imax(hash.Lx, n)
+	n = max(hash.Lx, n)
 
 	fx = make([]float64, n)
 	for cx := 0; cx < n; cx++ {
@@ -265,7 +259,7 @@ func (hash *Hash) coefficients(x, y, w, h int) (fx []float64, fy []float64) {
 	if hash.HasAlpha {
 		n = 5
 	}
-	n = imax(hash.Ly, n)
+	n = max(hash.Ly, n)
 
 	fy = make([]float64, n)
 	for cy := 0; cy < n; cy++ {
