@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/galdor/go-program"
-	"github.com/galdor/go-thumbhash"
+	"go.n16f.net/program"
+	"go.n16f.net/thumbhash"
 
 	"image/draw"
 	_ "image/jpeg"

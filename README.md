@@ -19,8 +19,8 @@ load the original image asynchronously.
 
 ## Usage
 Refer to the [Go package
-documentation](https://pkg.go.dev/github.com/galdor/go-thumbhash) for
-information about the API.
+documentation](https://pkg.go.dev/go.n16f.net/thumbhash) for information about
+the API.
 
 See the [`thumbhash` program](cmd/thumbhash/main.go) for a practical use case.
 
